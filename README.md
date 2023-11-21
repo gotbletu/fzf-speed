@@ -28,16 +28,20 @@
 - you dont need to change any code, copy the file and just rename the filename
 - e.g _htop_ to like _weechat_ and it will always jump any tmux window named _weechat_
 
+----
     _tmux_goto_htop,--.jump.to.custom.named.window.(process.viewer)
     _tmux_goto_weechat,--.jump.to.custom.named.window.(irc.chat.client)
     
+----
 
 #### spawn your own custom session layout
 - if you want to spawn a bunch of tmux windows/panes and execute commands on it
 - see the example code inside
 
+----
     _tmux_workspace_example,--.jump.to.or.start.custom.session
 
+----
 
 ### author
 - gotbletu (@youtube|github|odysee)

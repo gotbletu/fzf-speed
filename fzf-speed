@@ -1,0 +1,26 @@
+#!/usr/bin/env sh
+# author: gotbletu (@youtube|github|odysee)
+#         https://www.youtube.com/user/gotbletu
+# desc:   fzf scripts launcher in tmux, aka dmenu for tmux
+# demo:   https://youtu.be/41JxYe70Xwo
+# depend: tmux fzf findutils grep sed util-linux
+# reqd:   bind-key for tmux (e.g prefix + TAB to activate)
+#         $EDITOR ~/.tmux.conf
+#         # popup only works on tmux 3.2+
+#
+#         # if fzf-speed is already in your $PATH
+#         bind-key Tab capture-pane \; save-buffer /tmp/tmux-buffer \; delete-buffer \; display-popup -w 80% -h 60% -E "fzf-speed"
+#
+#         # else point to /path/of/script
+#         bind-key Tab capture-pane \; save-buffer /tmp/tmux-buffer \; delete-buffer \; display-popup -w 80% -h 60% -E "/path/to/fzf-speed"
+#
+#         # to use regular split-window for binding (lower than tmux 3.2)
+#         bind-key Tab capture-pane \; save-buffer /tmp/tmux-buffer \; delete-buffer \; split-window -hZ "/path/to/fzf-speed" \; last-pane -Z
+#         bind-key Tab capture-pane \; save-buffer /tmp/tmux-buffer \; delete-buffer \; split-window "/path/to/fzf-speed"
+
+
+export FZF_DEFAULT_OPTS="-e -i --info=hidden --layout=reverse --scroll-off=5 --tiebreak=index --bind 'home:first,end:last,tab:down,shift-tab:up'"
+dir="${0%/*}"
+selected="$(find "$dir" -maxdepth 1 -type f -exec basename {} \; | sort | grep '^_' | sed 's@\.@ @g' | column -s ',' -t \
+  | fzf -d '_' --with-nth 2.. --prompt="fzf-speed: " | cut -d ' ' -f1)"
+eval "${dir}/${selected},*"

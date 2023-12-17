@@ -1,3 +1,0 @@
-#!/usr/bin/env sh
-tmux split-window -h -c "#{pane_current_path}"
-

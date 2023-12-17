@@ -1,3 +1,0 @@
-#!/usr/bin/env sh
-tmux set-option -g -q mouse on
-tmux display-message 'Mouse: ON'

@@ -1,3 +1,0 @@
-#!/usr/bin/env sh
-tmux select-pane -t :.+
-tmux resize-pane -Z

@@ -1,3 +1,0 @@
-#!/usr/bin/env sh
-tmux set-option -g -q mouse off
-tmux display-message 'Mouse: OFF'

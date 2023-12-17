@@ -1,3 +1,0 @@
-#!/usr/bin/env sh
-tmux new-window -n 'urlview' -c "$HOME"
-tmux send-keys 'urlview /tmp/tmux-buffer && tmux kill-pane' C-m

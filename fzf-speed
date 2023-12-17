@@ -1,26 +1,949 @@
 #!/usr/bin/env sh
 # author: gotbletu (@youtube|github|odysee)
 #         https://www.youtube.com/user/gotbletu
-# desc:   fzf scripts launcher in tmux, aka dmenu for tmux
-# demo:   https://youtu.be/41JxYe70Xwo
-# depend: tmux fzf findutils grep sed util-linux
-# reqd:   bind-key for tmux (e.g prefix + TAB to activate)
-#         $EDITOR ~/.tmux.conf
-#         # popup only works on tmux 3.2+
-#
-#         # if fzf-speed is already in your $PATH
-#         bind-key Tab capture-pane \; save-buffer /tmp/tmux-buffer \; delete-buffer \; display-popup -w 80% -h 60% -E "fzf-speed"
-#
-#         # else point to /path/of/script
-#         bind-key Tab capture-pane \; save-buffer /tmp/tmux-buffer \; delete-buffer \; display-popup -w 80% -h 60% -E "/path/to/fzf-speed"
-#
-#         # to use regular split-window for binding (lower than tmux 3.2)
-#         bind-key Tab capture-pane \; save-buffer /tmp/tmux-buffer \; delete-buffer \; split-window -hZ "/path/to/fzf-speed" \; last-pane -Z
-#         bind-key Tab capture-pane \; save-buffer /tmp/tmux-buffer \; delete-buffer \; split-window "/path/to/fzf-speed"
+# desc:   use tmux popup/fzf to execute tmux commands instead of hotkeys
+# demo:   https://www.youtube.com/watch?v=41JxYe70Xwo
+# depend: tmux fzf coreutils awk util-linux sed
+# reff:
+# usage:  bind a hotkey to tmux.conf (e.g prefix + `)
+#         bind-key ` capture-pane \; save-buffer /tmp/tmux-buffer \; delete-buffer \; display-popup -w 80% -h 60% -E "~/.config/tmux/fzf-speed"
+#         bind-key ` capture-pane \; save-buffer /tmp/tmux-buffer \; delete-buffer \; display-popup -w 80% -h 60% -E "fzf-speed"
+# clog:
+# note:   tmux popup freeze when using command-prompt / confirm-before but works with split-window
 
+
+# todo: recheck these cmd below
+#       add in tmux-suspend/nested??
+#
+# tmux list-commands
+# attach-session (attach) [-dErx] [-c working-directory] [-f flags] [-t target-session]
+# bind-key (bind) [-nr] [-T key-table] [-N note] key [command [arguments]]
+# capture-pane (capturep) [-aCeJNpPq] [-b buffer-name] [-E end-line] [-S start-line] [-t target-pane]
+# command-prompt [-1bFkiN] [-I inputs] [-p prompts] [-t target-client] [-T type] [template]
+# confirm-before (confirm) [-b] [-p prompt] [-t target-client] command
+#
+# choose-client [-NrZ] [-F format] [-f filter] [-K key-format] [-O sort-order] [-t target-pane] [template]
+# clear-history (clearhist) [-t target-pane]
+# clear-prompt-history (clearphist) [-T type]
+# clock-mode [-t target-pane]
+# customize-mode [-NZ] [-F format] [-f filter] [-t target-pane]
+# delete-buffer (deleteb) [-b buffer-name]
+# detach-client (detach) [-aP] [-E shell-command] [-s target-session] [-t target-client]
+# display-menu (menu) [-O] [-c target-client] [-t target-pane] [-T title] [-x position] [-y position] name key command ...
+# display-message (display) [-aINpv] [-c target-client] [-d delay] [-F format] [-t target-pane] [message]
+# display-popup (popup) [-BCE] [-b border-lines] [-c target-client] [-d start-directory] [-e environment] [-h height] [-s style] [-S border-style] [-t target-pane][-T title] [-w width] [-x position] [-y position] [shell-command]
+# display-panes (displayp) [-bN] [-d duration] [-t target-client] [template]
+# find-window (findw) [-CiNrTZ] [-t target-pane] match-string
+# has-session (has) [-t target-session]
+# if-shell (if) [-bF] [-t target-pane] shell-command command [command]
+# join-pane (joinp) [-bdfhv] [-l size] [-s src-pane] [-t dst-pane]
+# kill-server
+# link-window (linkw) [-abdk] [-s src-window] [-t dst-window]
+# list-buffers (lsb) [-F format] [-f filter]
+# list-clients (lsc) [-F format] [-t target-session]
+# list-commands (lscm) [-F format] [command]
+# list-keys (lsk) [-1aN] [-P prefix-string] [-T key-table] [key]
+# list-panes (lsp) [-as] [-F format] [-f filter] [-t target-window]
+# list-sessions (ls) [-F format] [-f filter]
+# list-windows (lsw) [-a] [-F format] [-f filter] [-t target-session]
+# load-buffer (loadb) [-b buffer-name] [-t target-client] path
+# lock-client (lockc) [-t target-client]
+# lock-server (lock)
+# lock-session (locks) [-t target-session]
+# move-pane (movep) [-bdfhv] [-l size] [-s src-pane] [-t dst-pane]
+# move-window (movew) [-abdkr] [-s src-window] [-t dst-window]
+# new-session (new) [-AdDEPX] [-c start-directory] [-e environment] [-F format] [-f flags] [-n window-name] [-s session-name] [-t target-session] [-x width] [-y height] [shell-command]
+# new-window (neww) [-abdkPS] [-c start-directory] [-e environment] [-F format] [-n window-name] [-t target-window] [shell-command]
+# paste-buffer (pasteb) [-dpr] [-s separator] [-b buffer-name] [-t target-pane]
+# pipe-pane (pipep) [-IOo] [-t target-pane] [shell-command]
+# refresh-client (refresh) [-cDlLRSU] [-A pane:state] [-B name:what:format] [-C XxY] [-f flags] [-t target-client] [adjustment]
+# resize-pane (resizep) [-DLMRTUZ] [-x width] [-y height] [-t target-pane] [adjustment]
+# resize-window (resizew) [-aADLRU] [-x width] [-y height] [-t target-window] [adjustment]
+# respawn-pane (respawnp) [-k] [-c start-directory] [-e environment] [-t target-pane] [shell-command]
+# respawn-window (respawnw) [-k] [-c start-directory] [-e environment] [-t target-window] [shell-command]
+# rotate-window (rotatew) [-DUZ] [-t target-window]
+# run-shell (run) [-bC] [-d delay] [-t target-pane] [shell-command]
+# save-buffer (saveb) [-a] [-b buffer-name] path
+# select-pane (selectp) [-DdeLlMmRUZ] [-T title] [-t target-pane]
+# select-window (selectw) [-lnpT] [-t target-window]
+# send-keys (send) [-FHlMRX] [-N repeat-count] [-t target-pane] key ...
+# send-prefix [-2] [-t target-pane]
+# server-access [-adlrw] [-t target-pane] [user]
+# set-buffer (setb) [-aw] [-b buffer-name] [-n new-buffer-name] [-t target-client] data
+# set-environment (setenv) [-Fhgru] [-t target-session] name [value]
+# set-hook [-agpRuw] [-t target-pane] hook [command]
+# set-option (set) [-aFgopqsuUw] [-t target-pane] option [value]
+# set-window-option (setw) [-aFgoqu] [-t target-window] option [value]
+# show-buffer (showb) [-b buffer-name]
+# show-environment (showenv) [-hgs] [-t target-session] [name]
+# show-hooks [-gpw] [-t target-pane]
+# show-messages (showmsgs) [-JT] [-t target-client]
+# show-options (show) [-AgHpqsvw] [-t target-pane] [option]
+# show-prompt-history (showphist) [-T type]
+# show-window-options (showw) [-gv] [-t target-window] [option]
+# source-file (source) [-Fnqv] path ...
+# start-server (start)
+# suspend-client (suspendc) [-t target-client]
+# swap-pane (swapp) [-dDUZ] [-s src-pane] [-t dst-pane]
+# swap-window (swapw) [-d] [-s src-window] [-t dst-window]
+# switch-client (switchc) [-ElnprZ] [-c target-client] [-t target-session] [-T key-table]
+# unbind-key (unbind) [-anq] [-T key-table] key
+# unlink-window (unlinkw) [-k] [-t target-window]
+# wait-for (wait) [-L|-S|-U] channel
+
+# {{{ tmux commands list, '!' as delimiter
+mylist() {
+cat <<'EOF'
+bell!-- list and jump to window with bell alert
+bell-next!-- jump to next window with bell alert
+break-pane!-- break pane off to its own window
+choose-buffer!-- list clipboard history with preview and paste
+choose-tree-pane!-- list panes windows or sessions with preview (0-9:jump, /:search)
+choose-tree-session!-- list sessions with preview (0-9:jump, /:search)
+choose-tree-window!-- list windows with preview (0-9:jump, /:search)
+clipboard-clear!-- clear all clipboard
+clipboard-delete!-- delete current clipboard
+clipboard-history!-- search and paste from clipboard history
+clipboard-paste!-- paste current clipboard
+copy-mode!-- enter copy mode
+cycle-pane!-- cycle thru panes keep zoomed
+detach-client!-- detach the current client
+display-pane!-- display pane numbers (press number keys to jump to a pane)
+edit-conf!-- edit tmux config
+edit-speed!-- edit fzf-speed config
+find-panes!-- search all panes and jump
+find-sessions!-- search all session and jump
+find-windows!-- search all window and jump
+goto-weechat!-- jump to custom named window
+hotkey!-- list all keyboard shortcuts from user-defined and built-in keybindings
+join-pane-from!-- join pane from
+join-pane-to!-- send pane to
+kill-pane!-- close current pane
+kill-server!-- close the server and clients and destroy all
+kill-session!-- close current session
+kill-window!-- close current window
+last-pane!-- jump to last used pane
+last-session!-- jump to last used session
+last-window!-- jump to last used window
+manpage!-- tmux manpage
+mark-pane-clear!-- clear the marked pane
+mark-pane-current!-- mark the current pane
+mouse-off!-- disable mouse mode
+mouse-on!-- enable mouse mode
+move-pane-choose!-- move pane using choose-tree
+move-window-left!-- move window left
+move-window-right!-- move window right
+new-session!-- create a new session
+new-window!-- create new window
+next-layout!-- change to next layout
+next-session!-- jump to next session
+next-window!-- jump to next window
+previous-layout!-- change to previous layout
+previous-session!-- jump to previous session
+previous-window!-- jump to previous window
+rename-pane!-- rename current pane
+rename-session!-- rename current session
+rename-window!-- rename current window
+rotate-window!-- rotate the positions of the panes within a window
+scrollback-clear!-- clear scrollback history
+select-layout-even-horizontal!-- change layout (|||)
+select-layout-even-vertical!-- change layout (=)
+select-layout-main-horizontal!-- change layout (top^|bottom||)
+select-layout-main-vertical!-- change layout (left<|right=)
+select-layout-tiled!-- change layout (#)
+select-pane-down!-- select pane down
+select-pane-left!-- select pane left
+select-pane-next!-- select next pane in the current window
+select-pane-prev!-- select previous pane in the current window
+select-pane-right!-- select pane right
+select-pane-up!-- select pane up
+select-window-00!-- jump to window 00
+select-window-01!-- jump to window 01
+select-window-02!-- jump to window 02
+select-window-03!-- jump to window 03
+select-window-04!-- jump to window 04
+select-window-05!-- jump to window 05
+select-window-06!-- jump to window 06
+select-window-07!-- jump to window 07
+select-window-08!-- jump to window 08
+select-window-09!-- jump to window 09
+select-window-10!-- jump to window 10
+select-window-11!-- jump to window 11
+select-window-12!-- jump to window 12
+select-window-13!-- jump to window 13
+select-window-14!-- jump to window 14
+select-window-15!-- jump to window 15
+select-window-16!-- jump to window 16
+select-window-17!-- jump to window 17
+select-window-18!-- jump to window 18
+select-window-19!-- jump to window 19
+select-window-20!-- jump to window 20
+split-pane!-- split current pane horizontal
+split-pane-vert!-- split current pane vertical
+split-window!-- split current window horizontal
+split-window-vert!-- split current window vertical
+swap-pane-next!-- swap pane with next pane in current window
+swap-pane-prev!-- swap pane with previous pane in current window
+swap-pane-choose!-- swap pane using choose-tree
+swap-window-choose!-- swap window using choose-tree
+switch-panes!-- search and jump to a pane in the current session
+switch-windows!-- search and jump to a window in the current session
+urlparser-urlscan!-- generate clickable url list with context (require urlscan)
+urlparser-urlscan-compact!-- generate clickable url list (require urlscan)
+urlparser-urlview!-- generate clickable url list (require urlview)
+urlparser-w3m!-- generate clickable url with full context (require w3m)
+workspace-amule!-- jump to or start custom session
+workspace-anubistorrent!-- jump to or start custom session
+workspace-aria2p!-- jump to or start custom session
+workspace-audiobook!-- jump to or start custom session
+workspace-bittorrent!-- jump to or start custom session
+workspace-casting!-- jump to or start custom session
+workspace-directconnect!-- jump to or start custom session
+workspace-email!-- jump to or start custom session
+workspace-fm!-- jump to or start custom session
+workspace-ftp!-- jump to or start custom session
+workspace-instantmessenger!-- jump to or start custom session
+workspace-irc!-- jump to or start custom session
+workspace-music!-- jump to or start custom session
+workspace-napster!-- jump to or start custom session
+workspace-newsraft!-- jump to or start custom session
+workspace-radio!-- jump to or start custom session
+workspace-rss!-- jump to or start custom session
+workspace-scripting!-- jump to or start custom session
+workspace-web!-- jump to or start custom session
+workspace-yt!-- jump to or start custom session
+zoom-pane!-- toggle zoom current pane
+statusbar-hide-toggle!-- toggle statusbar hide/show
+EOF
+}
+# }}}
 
 export FZF_DEFAULT_OPTS="-e -i --info=hidden --layout=reverse --scroll-off=5 --tiebreak=index --bind 'home:first,end:last,tab:down,shift-tab:up'"
-dir="${0%/*}"
-selected="$(find "$dir" -maxdepth 1 -type f -exec basename {} \; | sort | grep '^_' | sed 's@\.@ @g' | column -s ',' -t \
-  | fzf -d '_' --with-nth 2.. --prompt="fzf-speed: " | cut -d ' ' -f1)"
-eval "${dir}/${selected},*"
+selected="$(mylist | sort | column -s '!' -t | fzf --prompt="fzf-speed: " | cut -d ' ' -f1)"
+[ -z "$selected" ] && exit
+case $selected in
+# _tmux_join_pane_from,--.join.pane.from
+# _tmux_join_pane_to,--.send.pane.to
+# _tmux_move_pane,--.move.pane.using.choose-tree
+# _tmux_new_session,--.create.a.new.session
+  bell)
+    # note: simulate a bell alert on a window: $ sleep 3 && echo -e "\a"
+    target_spec="#{session_name}:#{window_id}:#{pane_id}:"
+    list_data="#{window_name} #{pane_title} #{window_bell_flag} #{pane_current_path} #{pane_current_command}"
+    line="$(tmux list-panes -a -F "$target_spec $list_data" | awk '$4 == "1" {print $0}' | fzf --prompt="Go to bell alert pane: ")" || exit 0
+    session="$(echo "$line" | cut -d ':' -f1)"
+    window_num="$(echo "$line" | cut -d ':' -f2)"
+    pane_num="$(echo "$line" | cut -d ':' -f3)"
+    tmux select-pane -t "$pane_num" && tmux select-window -t "$window_num" && tmux switch-client -t "$session"
+    ;;
+  bell-next)
+    target_spec="#{session_name}:#{window_id}:#{pane_id}:"
+    list_data="#{window_name} #{pane_title} #{window_bell_flag} #{pane_current_path} #{pane_current_command}"
+    line="$(tmux list-panes -a -F "$target_spec $list_data" | awk '$4 == "1" {print $0}' | head -n 1)" || exit 0
+    session="$(echo "$line" | cut -d ':' -f1)"
+    window_num="$(echo "$line" | cut -d ':' -f2)"
+    pane_num="$(echo "$line" | cut -d ':' -f3)"
+    tmux select-pane -t "$pane_num" && tmux select-window -t "$window_num" && tmux switch-client -t "$session"
+    ;;
+  break-pane)
+    tmux break-pane
+    ;;
+  choose-buffer)
+    tmux choose-buffer -Z
+    ;;
+  choose-tree-pane)
+    tmux choose-tree -Z
+    ;;
+  choose-tree-session)
+    tmux choose-tree -Z -s
+    ;;
+  choose-tree-window)
+    tmux choose-tree -Z -w
+    ;;
+  clipboard-clear)
+    while tmux delete-buffer; do :; done
+    tmux display-message "cleared all tmux clipboard history"
+    ;;
+  clipboard-delete)
+    tmux delete-buffer
+    tmux display-message "deleted current tmux clipboard from history"
+    ;;
+  clipboard-history)
+    tmux paste-buffer -b "$(tmux list-buffers | fzf --prompt="tmux clipboard: " | cut -d ':' -f1)"
+    ;;
+  clipboard-paste)
+    tmux paste-buffer
+    ;;
+  copy-mode)
+    tmux copy-mode
+    ;;
+  cycle-pane)
+    tmux select-pane -t :.+
+    tmux resize-pane -Z
+    ;;
+  detach-client)
+    tmux detach-client
+    ;;
+  display-pane)
+    # tmux command-prompt -p "Press {Enter} then {Number} to jump to pane:" "display-panes"
+    tmux split-window -p 1 'tmux command-prompt -p "Press {Enter} then {Number} to jump to pane:" "display-panes"'
+    ;;
+  find-panes)
+    # tmux list-pane formating
+    target_spec="#{session_name}:#{window_id}:#{pane_id}:"
+    list_data="#{window_name} #{pane_title} #{pane_current_path} #{pane_current_command}"
+    # select pane
+    line="$(tmux list-panes -a -F "$target_spec $list_data" | sed 's/ /☺️/' | column -t -s '☺️' | fzf --prompt="Select a pane: ")" || exit 0
+    session="$(echo "$line" | cut -d ':' -f1)"
+    window_num="$(echo "$line" | cut -d ':' -f2)"
+    pane_num="$(echo "$line" | cut -d ':' -f3)"
+    tmux select-pane -t "$pane_num" && tmux select-window -t "$window_num" && tmux switch-client -t "$session"
+    ;;
+  find-sessions)
+    line="$(tmux list-sessions | sed 's/ /☺️/' | column -t -s '☺️' | fzf --prompt="Select a session: ")" || exit 0
+    session="$(echo "$line" | cut -d ':' -f1)"
+    tmux switch-client -t "$session"
+    ;;
+  find-windows)
+    # tmux list-windows formating
+    target_spec="#{session_name}:#{window_id}:"
+    list_data="#{window_name} #{pane_title} #{pane_current_path} #{pane_current_command}"
+    # select window
+    line="$(tmux list-windows -a -F "$target_spec $list_data" | sed 's/ /☺️/' | column -t -s '☺️' | fzf --prompt="Select a window: ")" || exit 0
+    session="$(echo "$line" | cut -d ':' -f1)"
+    window_num="$(echo "$line" | cut -d ':' -f2)"
+    tmux select-window -t "$window_num" && tmux switch-client -t "$session"
+    ;;
+  join-pane-from)
+### join-pane -t 2 moves the current pane to window 2 of the current session ### join-pane -t net-pers:2 moves the current pane to window 2 of a session called net-pers
+### join-pane -s net-pers:2.1 moves the second (because panes are 0-indexed) pane of window 2 of session net-pers below the current panel
+### join-pane -t 3.2 moves the current pane after the third pane of window 3 of the current session.
+    # tmux command-prompt -p "join pane from:" "join-pane -s '%%'"
+    tmux split-window -p 1 'tmux command-prompt -p "join pane from:" "join-pane -s '%%'"'
+    # tmux split-window -p 1 'tmux command-prompt -p "Rename session:" "rename-session '%%'"'
+    ;;
+  join-pane-to)
+    # tmux command-prompt -p "send current pane to?" "join-pane -t '%%'"
+    tmux split-window -p 1 'tmux command-prompt -p "send current pane to?" "join-pane -t '%%'"'
+    ;;
+  kill-pane)
+    tmux kill-pane
+    ;;
+  kill-server)
+    tmux split-window -p 1 'tmux confirm-before -p "kill the tmux server, clients and destroy all sessions? (y/n)" kill-server'
+    ;;
+  kill-session)
+    # kill session else kill server if only 1 session total
+    if [ "$(tmux list-sessions | wc -l)" = 1 ]; then
+      # tmux confirm-before -p "Only single session active, kill-server instead (y/n)?" kill-server
+      # tmux kill-server
+      tmux split-window -p 1 'tmux confirm-before -p "Only single session active, kill-server instead (y/n)?" kill-server'
+    else
+      # tmux confirm-before -p "Kill #S session (y/n)?" "run-shell 'tmux switch-client -p \; kill-session -t \"#S\"'"
+      # tmux confirm-before -p "Kill #S session (y/n)?" "run-shell 'tmux switch-client -l \; kill-session -t \"#S\"'"
+      # tmux kill-session
+      tmux split-window -p 1 'tmux confirm-before -p "Kill #S session (y/n)?" kill-session'
+    fi
+    ;;
+  kill-window)
+    tmux kill-window
+    ;;
+  last-pane)
+    tmux last-pane
+    ;;
+  last-session)
+    tmux switch-client -l
+    ;;
+  last-window)
+    tmux last-window
+    ;;
+  mark-pane-clear)
+    tmux select-pane -M
+    ;;
+  mark-pane-current)
+    tmux select-pane -m
+    ;;
+  mouse-off)
+    tmux set-option -g -q mouse off
+    tmux display-message 'Mouse: OFF'
+    ;;
+  mouse-on)
+    tmux set-option -g -q mouse on
+    tmux display-message 'Mouse: ON'
+    ;;
+  move-pane-choose)
+    tmux choose-tree -Zw "move-pane -t '%%'"
+    ;;
+  move-window-left)
+    tmux swap-window -t -1
+    tmux select-window -t -1
+    ;;
+  move-window-right)
+    tmux swap-window -t +1
+    tmux select-window -t +1
+    ;;
+  new-session)
+    tmux command-prompt -p "Enter new session name:" "new-session -s '%%'"
+    ;;
+  new-window)
+    tmux new-window -c "#{pane_current_path}"
+    ;;
+  next-layout)
+    tmux next-layout
+    ;;
+  next-session)
+    tmux switch-client -n
+    ;;
+  next-window)
+    tmux next-window
+    ;;
+  previous-layout)
+    tmux previous-layout
+    ;;
+  previous-session)
+    tmux switch-client -p
+    ;;
+  previous-window)
+    tmux previous-window
+    ;;
+  rename-pane)
+    # tmux command-prompt -p "Rename pane:" "select-pane -T '%%'"
+    echo "$TMUX_PANE" > /tmp/tmuxpaneid
+    ;;
+  rename-session)
+    tmux split-window -p 1 'tmux command-prompt -p "Rename session:" "rename-session '%%'"'
+    ;;
+  rename-window)
+    tmux split-window -p 1 'tmux command-prompt -p "Rename window:" "rename-window '%%'"'
+    ;;
+  rotate-window)
+    tmux rotate-window -Z
+    ;;
+  scrollback-clear)
+    tmux clear-history
+    ;;
+  select-layout-even-horizontal)
+    tmux select-layout even-horizontal
+    ;;
+  select-layout-even-vertical)
+    tmux select-layout even-vertical
+    ;;
+  select-layout-main-horizontal)
+    tmux select-layout main-horizontal
+    ;;
+  select-layout-main-vertical)
+    tmux select-layout main-vertical
+    ;;
+  select-layout-tiled)
+    tmux select-layout tiled
+    ;;
+  select-pane-down)
+    tmux select-pane -D
+    ;;
+  select-pane-left)
+    tmux select-pane -L
+    ;;
+  select-pane-next)
+    tmux select-pane -t :.+
+    ;;
+  select-pane-prev)
+    tmux select-pane -t :.-
+    ;;
+  select-pane-right)
+    tmux select-pane -R
+    ;;
+  select-pane-up)
+    tmux select-pane -U
+    ;;
+  select-window-00)
+    tmux select-window -t:0
+    ;;
+  select-window-01)
+    tmux select-window -t:1
+    ;;
+  select-window-02)
+    tmux select-window -t:2
+    ;;
+  select-window-03)
+    tmux select-window -t:3
+    ;;
+  select-window-04)
+    tmux select-window -t:4
+    ;;
+  select-window-05)
+    tmux select-window -t:5
+    ;;
+  select-window-06)
+    tmux select-window -t:6
+    ;;
+  select-window-07)
+    tmux select-window -t:7
+    ;;
+  select-window-08)
+    tmux select-window -t:8
+    ;;
+  select-window-09)
+    tmux select-window -t:9
+    ;;
+  select-window-10)
+    tmux select-window -t:10
+    ;;
+  select-window-11)
+    tmux select-window -t:11
+    ;;
+  select-window-12)
+    tmux select-window -t:12
+    ;;
+  select-window-13)
+    tmux select-window -t:13
+    ;;
+  select-window-14)
+    tmux select-window -t:14
+    ;;
+  select-window-15)
+    tmux select-window -t:15
+    ;;
+  select-window-16)
+    tmux select-window -t:16
+    ;;
+  select-window-17)
+    tmux select-window -t:17
+    ;;
+  select-window-18)
+    tmux select-window -t:18
+    ;;
+  select-window-19)
+    tmux select-window -t:19
+    ;;
+  select-window-20)
+    tmux select-window -t:20
+    ;;
+  split-pane)
+    tmux split-window -c "#{pane_current_path}"
+    ;;
+  split-pane-vert)
+    tmux split-window -h -c "#{pane_current_path}"
+    ;;
+  split-window)
+    tmux split-window -fv -c "#{pane_current_path}"
+    ;;
+  split-window-vert)
+    tmux split-window -hfv -c "#{pane_current_path}"
+    ;;
+  swap-pane-next)
+    tmux swap-pane -D
+    ;;
+  swap-pane-prev)
+    tmux swap-pane -U
+    ;;
+  swap-pane-choose)
+    tmux choose-tree -Zw "swap-pane -t '%%'"
+    ;;
+  swap-window-choose)
+    tmux choose-tree -Zw "swap-window -t '%%'"
+    ;;
+  switch-panes)
+    target_spec="#{session_name}:#{window_id}:#{pane_id}:"
+    list_data="#{window_name} #{pane_title} #{pane_current_path} #{pane_current_command}"
+    line="$(tmux list-panes -s -F "$target_spec $list_data" | fzf --prompt="Select a pane (current session): ")" || exit 0
+    session="$(echo "$line" | cut -d ':' -f1)"
+    window_num="$(echo "$line" | cut -d ':' -f2)"
+    pane_num="$(echo "$line" | cut -d ':' -f3)"
+    tmux select-pane -t "$pane_num" && tmux select-window -t "$window_num" && tmux switch-client -t "$session"
+    ;;
+  switch-windows)
+    target_spec="#{session_name}:#{window_id}:"
+    list_data="#{window_name} #{pane_title} #{pane_current_path} #{pane_current_command}"
+    line="$(tmux list-windows -F "$target_spec $list_data" | fzf --prompt="Select a window (current session): ")" || exit 0
+    session="$(echo "$line" | cut -d ':' -f1)"
+    window_num="$(echo "$line" | cut -d ':' -f2)"
+    tmux select-window -t "$window_num" && tmux switch-client -t "$session"
+    ;;
+  urlparser-urlscan)
+    tmux new-window -n 'urlscan' -c "$HOME"
+    tmux send-keys 'urlscan /tmp/tmux-buffer && tmux kill-pane' C-m
+    ;;
+  urlparser-urlscan-compact)
+    tmux new-window -n 'urlscan' -c "$HOME"
+    tmux send-keys 'urlscan --compact /tmp/tmux-buffer && tmux kill-pane' C-m
+    ;;
+  urlparser-urlview)
+    tmux new-window -n 'urlview' -c "$HOME"
+    tmux send-keys 'urlview /tmp/tmux-buffer && tmux kill-pane' C-m
+    ;;
+  urlparser-w3m)
+    tmux new-window -n 'urlw3mcontext' -c "$HOME"
+    tmux send-keys 'w3m -o mark_all_pages=1 /tmp/tmux-buffer && tmux kill-pane' C-m
+    ;;
+  zoom-pane)
+    tmux resize-pane -Z
+    ;;
+  hotkey)
+    tmux new-window -n tmuxkeys 'comm -23 <(tmux list-keys | sort) <(tmux -L test -f /dev/null list-keys | sort) | \
+      fzf -e -i -m --prompt="tmux hotkeys: " \
+      --info=hidden --scroll-off=5 --layout=reverse --tiebreak=index \
+      --header "prefix=yes-prefix root=no-prefix" '
+    ;;
+  workspace-amule)
+    session="amule"
+    sessionexists=$(tmux list-sessions | grep "^$session":)
+    if [ -z "$sessionexists" ]; then
+      # create new session
+      tmux new-session -d -s "$session" -c "$HOME"
+      tmux rename-window -t "$session":0 'results'
+      # tmux send-keys -t "$session":0 'viddy --no-title --skip-empty-diffs amule-results' C-m
+      tmux send-keys -t "$session":0 "while true; do amule-results | less ; done" C-m
+      tmux split-window -t "$session":0 -v -p 10 -c "$HOME"
+      tmux send-keys -t "$session":0 'amule-textmode' C-m
+      # tmux send-keys -t "$session":0 'amule-daemon ; amule-textmode' C-m
+
+      tmux new-window -t "$session":1 -n 'list' -c "$HOME"
+      # tmux send-keys -t "$session":1 'viddy --no-title --skip-empty-diffs amule-list' C-m
+      tmux send-keys -t "$session":1 'watch -n 5 -t amule-list' C-m
+      tmux split-window -t "$session":1 -v -p 15 -c "$HOME"
+
+      tmux new-window -t "$session":2 -n 'servers' -c "$HOME"
+      # tmux send-keys -t "$session":2 'viddy --no-title --skip-empty-diffs amule-servers' C-m
+      tmux send-keys -t "$session":2 'watch -n 60 -t amule-servers' C-m
+      tmux split-window -t "$session":2 -v -p 10 -c "$HOME"
+      tmux send-keys -t "$session":2 'amule-textmode' C-m
+
+      tmux new-window -t "$session":3 -n 'amulebay' -c "$HOME"
+      tmux send-keys -t "$session":3 "while true; do \
+        tmux rename-window -t $session:3 amulebay && clear && \
+        ranger /run/user/1000/sshfs/heoyea@192.168.1.131/alfa/amule/incoming \
+        --cmd='set preview_files false' ; done" C-m
+      tmux switch-client -t "$session":0
+
+      # tmux new-window -t "$session":3 -n 'shared' -c "$HOME"
+      # tmux send-keys -t "$session":3 'watch -t amule-shared' C-m
+      #
+      # tmux new-window -t "$session":4 -n 'dir' -c "$HOME"
+      # tmux send-keys -t "$session":4 'while true; do \
+      # tmux rename-window -t "$session":4 "dir" && clear && \
+      # ranger ~/.cyberbay/torrentbay/completed \
+      # ~/.cyberbay/torrentbay/incoming_amule \
+      # ~/.cyberbay/torrentbay/incompleted_amule \
+      # --cmd="set preview_files false" ; done' C-m
+
+      tmux switch-client -t "$session":0
+    else
+      tmux switch-client -t "$session"
+    fi
+    ;;
+  workspace-anubistorrent)
+    session="anubistorrent"
+    sessionexists=$(tmux list-sessions | grep "^$session":)
+    if [ -z "$sessionexists" ]; then
+      tmux new-session -d -s "$session" -c "$HOME"
+      tmux new-window -t "$session":0 -n 'anubisbt' -c "$HOME"
+      tmux send-keys -t "$session":0 "tmux rename-window -t $session:0 anubisbt" C-m
+      tmux send-keys -t "$session":0 'tsm-ncurse-anubis' C-m
+      tmux new-window -t "$session":1 -n 'anubisbay' -c "$HOME"
+      tmux send-keys -t "$session":1 "while true; do \
+        tmux rename-window -t $session:1 anubisbay && clear && \
+        ranger /run/user/1000/sshfs/heoyea@192.168.1.131/alfa/transmission/downloads/complete \
+        /run/user/1000/sshfs/heoyea@192.168.1.131/alfa/transmission/downloads/incomplete \
+        --cmd='set preview_files false' ; done" C-m
+      tmux switch-client -t "$session":0
+    else
+      tmux switch-client -t "$session"
+    fi
+    ;;
+  workspace-aria2p)
+    session="aria2p"
+    sessionexists=$(tmux list-sessions | grep "^$session":)
+    if [ -z "$sessionexists" ]; then
+      tmux new-session -d -s "$session" -c "$HOME"
+      tmux new-window -t "$session":0 -n 'aria2p' -c "$HOME"
+      tmux send-keys -t "$session":0 "tmux rename-window -t $session:0 aria2p" C-m
+      tmux send-keys -t "$session":0 'if ps axuf | grep -v grep | grep -q diana.session ; then \
+        aria2p ; else dad -d ~/.cyberbay/ariabay start && aria2p ; fi' C-m
+      tmux new-window -t "$session":1 -n 'ariabay' -c "$HOME"
+      tmux send-keys -t "$session":1 "while true; do \
+        tmux rename-window -t $session:1 ariabay && clear && \
+        ranger ~/.cyberbay/ariabay ~/.cyberbay/torrentbay/completed \
+        --cmd='set preview_files false' ; done" C-m
+      tmux switch-client -t "$session":0
+    else
+      tmux switch-client -t "$session"
+    fi
+    ;;
+  workspace-audiobook)
+    session="audiobook"
+    sessionexists=$(tmux list-sessions | grep "^$session":)
+    if [ -z "$sessionexists" ]; then
+      tmux new-session -d -s "$session" -c "$HOME"
+      tmux new-window -t "$session":0 -n 'gadacz' -c "$HOME"
+      tmux send-keys -t "$session":0 "while true; do gadacz -a \"$(find ~/Downloads/___audiobook \
+        -maxdepth 1 -type d | tail -n +2 | fzf -d / --with-nth -1)\" ; done" C-m
+      tmux new-window -t "$session":1 -n 'audiobay' -c "$HOME"
+      tmux send-keys -t "$session":1 "while true; do \
+        tmux rename-window -t $session:1 audiobay && clear && \
+        ranger ~/Downloads ~/Downloads/___audiobook \
+        --cmd='set preview_files false' ; done" C-m
+      tmux switch-client -t "$session":0
+    else
+      tmux switch-client -t "$session"
+    fi
+    ;;
+  workspace-bittorrent)
+    session="bittorrent"
+    sessionexists=$(tmux list-sessions | grep "^$session":)
+    if [ -z "$sessionexists" ]; then
+      tmux new-session -d -s "$session" -c "$HOME"
+      tmux new-window -t "$session":0 -n 'bt' -c "$HOME"
+      tmux send-keys -t "$session":0 'tmux rename-window -t "$session":0 "bt"' C-m
+      tmux send-keys -t "$session":0 'if pidof -x /usr/bin/transmission-daemon; then \
+        transmission-remote-cli ; else \
+        /usr/bin/transmission-daemon && transmission-remote-cli; fi' C-m
+      tmux new-window -t "$session":1 -n 'btbay' -c "$HOME"
+      tmux send-keys -t "$session":1 'while true; do tmux rename-window -t "$session":1 "btbay" && clear && \
+        ranger ~/.cyberbay/torrentbay/completed ~/.cyberbay/torrentbay/incompleted \
+        --cmd="set preview_files false" ; done' C-m
+      tmux switch-client -t "$session":0
+    else
+      tmux switch-client -t "$session"
+    fi
+    ;;
+  workspace-casting)
+    session="casting"
+    sessionexists=$(tmux list-sessions | grep "^$session":)
+    if [ -z "$sessionexists" ]; then
+      tmux new-session -d -s "$session" -c "$HOME/public/screencast"
+      tmux rename-window -t "$session":0 'cast'
+      tmux new-window -t "$session":1 -n 'demo' -c "$HOME"
+      tmux switch-client -t "$session":0
+    else
+      tmux switch-client -t "$session"
+    fi
+    ;;
+  workspace-directconnect)
+    session="directconnect"
+    sessionexists=$(tmux list-sessions | grep "^$session":)
+    if [ -z "$sessionexists" ]; then
+      tmux new-session -d -s "$session" -c "$HOME"
+      tmux new-window -t "$session":0 -n 'ncdc' -c "$HOME"
+      tmux send-keys -t "$session":0 'ncdc' C-m
+      tmux new-window -t "$session":1 -n 'dcppbay' -c "$HOME"
+      tmux send-keys -t "$session":1 'while true; do \
+        tmux rename-window -t "$session":1 "dcppbay" && clear && \
+        ranger ~/.cyberbay/directconnectbay/completed ~/.cyberbay/directconnectbay/incompleted \
+        --cmd="set preview_files false" ; done' C-m
+      tmux switch-client -t "$session":0
+    else
+      tmux switch-client -t "$session"
+    fi
+    ;;
+  workspace-ftp)
+    session="ftp"
+    sessionexists=$(tmux list-sessions | grep "^$session":)
+    if [ -z "$sessionexists" ]; then
+      tmux new-session -d -s "$session" -c "$HOME"
+      tmux new-window -t "$session":0 -n 'termscp' -c "$HOME"
+      tmux send-keys -t "$session":0 'termscp' C-m
+      tmux new-window -t "$session":1 -n 'ftpbay' -c "$HOME"
+      tmux send-keys -t "$session":1 'while true; do \
+        tmux rename-window -t "$session":1 "ftpbay" && clear && \
+        ranger ~/.cyberbay/ftpbay --cmd="set preview_files false" ; done' C-m
+      tmux switch-client -t "$session":0
+    else
+      tmux switch-client -t "$session"
+    fi
+    ;;
+  workspace-instantmessenger)
+    session="instantmessenger"
+    sessionexists=$(tmux list-sessions | grep "^$session":)
+    if [ -z "$sessionexists" ]; then
+      tmux new-session -d -s "$session" -c "$HOME"
+      tmux new-window -t "$session":0 -n 'im' -c "$HOME"
+      tmux send-keys -t "$session":0 'tmux rename-window -t "$session":0 "im"' C-m
+      tmux send-keys -t "$session":0 'finch' C-m
+      tmux switch-client -t "$session":0
+    else
+      tmux switch-client -t "$session"
+    fi
+    ;;
+  workspace-irc)
+    session="irc"
+    sessionexists=$(tmux list-sessions | grep "^$session":)
+    if [ -z "$sessionexists" ]; then
+      tmux new-session -d -s "$session" -c "$HOME"
+      tmux new-window -t "$session":0 -n 'weechat' -c "$HOME"
+      tmux send-keys -t "$session":0 'weechat' C-m
+      tmux new-window -t "$session":1 -n 'xdccbay' -c "$HOME"
+      tmux send-keys -t "$session":1 'while true; do \
+        tmux rename-window -t "$session":1 "xdccbay" && clear && \
+        ranger ~/.cyberbay/xdccbay/download ~/.cyberbay/xdccbay/upload \
+        --cmd="set preview_files false" ; done' C-m
+      tmux switch-client -t "$session":0
+    else
+      tmux switch-client -t "$session"
+    fi
+    ;;
+  workspace-music)
+    session="music"
+    sessionexists=$(tmux list-sessions | grep "^$session":)
+    if [ -z "$sessionexists" ]; then
+      tmux new-session -d -s "$session" -c "$HOME"
+      tmux new-window -t "$session":0 -n 'music' -c "$HOME"
+      tmux send-keys -t "$session":0 'cmus' C-m
+      tmux switch-client -t "$session":0
+    else
+      tmux switch-client -t "$session"
+    fi
+    ;;
+  workspace-napster)
+    session="napster"
+    sessionexists=$(tmux list-sessions | grep "^$session":)
+    if [ -z "$sessionexists" ]; then
+      tmux new-session -d -s "$session" -c "$HOME"
+      tmux new-window -t "$session":0 -n 'nap' -c "$HOME"
+      tmux send-keys -t "$session":0 'nap' C-m
+      tmux new-window -t "$session":1 -n 'napbay' -c "$HOME"
+      tmux send-keys -t "$session":1 'while true; do \
+        tmux rename-window -t "$session":1 "napbay" && clear && \
+        ranger ~/.cyberbay/napsterbay/completed ~/.cyberbay/napsterbay/incompleted \
+        --cmd="set preview_files false" ; done' C-m
+      tmux switch-client -t "$session":0
+    else
+      tmux switch-client -t "$session"
+    fi
+    ;;
+  workspace-newsraft)
+    session="newsraft"
+    sessionexists=$(tmux list-sessions | grep "^$session":)
+    if [ -z "$sessionexists" ]; then
+      tmux new-session -d -s "$session" -c "$HOME"
+      tmux new-window -t "$session":0 -n 'rss' -c "$HOME"
+      tmux send-keys -t "$session":0 'newsraft' C-m
+      tmux switch-client -t "$session":0
+    else
+      tmux switch-client -t "$session"
+    fi
+    ;;
+  workspace-radio)
+    session="radio"
+    sessionexists=$(tmux list-sessions | grep "^$session":)
+    if [ -z "$sessionexists" ]; then
+      tmux new-session -d -s "$session" -c "$HOME"
+      tmux new-window -t "$session":0 -n 'radio' -c "$HOME"
+      tmux send-keys -t "$session":0 'tmux rename-window -t "$session":0 "pyradio"' C-m
+      tmux send-keys -t "$session":0 'pyradio && tmux kill-pane' C-m
+      tmux switch-client -t "$session":0
+    else
+      tmux switch-client -t "$session"
+    fi
+    ;;
+  workspace-rss)
+    session="rss"
+    sessionexists=$(tmux list-sessions | grep "^$session":)
+    if [ -z "$sessionexists" ]; then
+      tmux new-session -d -s "$session" -c "$HOME"
+      tmux new-window -t "$session":0 -n 'rss' -c "$HOME"
+      tmux send-keys -t "$session":0 'newsboat && tmux kill-pane' C-m
+      tmux switch-client -t "$session":0
+    else
+      tmux switch-client -t "$session"
+    fi
+    ;;
+  workspace-scripting)
+    session="scripting"
+    sessionexists=$(tmux list-sessions | grep "^$session":)
+    if [ -z "$sessionexists" ]; then
+      tmux new-session -d -s "$session" -c "$HOME/.scripts"
+      tmux rename-window -t "$session":0 'scripts'
+      tmux switch-client -t "$session":0
+    else
+      tmux switch-client -t "$session"
+    fi
+    ;;
+  workspace-web)
+    session="web"
+    sessionexists=$(tmux list-sessions | grep "^$session":)
+    if [ -z "$sessionexists" ]; then
+      tmux new-session -d -s "$session" -c "$HOME"
+      tmux new-window -t "$session":0 -n 'web' -c "$HOME"
+      tmux send-keys -t "$session":0 "w3m -N '$HOME/.w3m/bookmark.html'" C-m
+      tmux switch-client -t "$session":0
+    else
+      tmux switch-client -t "$session"
+    fi
+    ;;
+  workspace-fm)
+    session="fm"
+    sessionexists=$(tmux list-sessions | grep "^$session":)
+    if [ -z "$sessionexists" ]; then
+      tmux new-session -d -s "$session" -c "$HOME"
+      tmux new-window -t "$session":0 -n 'fm' -c "$HOME"
+      tmux send-keys -t "$session":0 "watch -t 'tsp-fm | cut -c-$(tput cols)'" C-m
+      tmux split-window -t "$session":0 -v -c "$HOME"
+      tmux send-keys -t "$session":0 "while true; do tmux rename-window -t $session:0 fm && clear && \
+        ranger ~/.cyberbay/torrentbay/completed ~/Downloads \
+        --cmd='set preview_files false' ; done" C-m
+      tmux switch-client -t "$session":0
+    else
+      tmux switch-client -t "$session"
+    fi
+    ;;
+  workspace-email)
+    session="email"
+    sessionexists=$(tmux list-sessions | grep "^$session":)
+    if [ -z "$sessionexists" ]; then
+      tmux new-session -d -s "$session" -c "$HOME"
+      tmux new-window -t "$session":0 -n 'email' -c "$HOME"
+      tmux send-keys -t "$session":0 'mutt' C-m
+      tmux switch-client -t "$session":0
+    else
+      tmux switch-client -t "$session"
+    fi
+    ;;
+  workspace-yt)
+    session="yt"
+    sessionexists=$(tmux list-sessions | grep "^$session":)
+    if [ -z "$sessionexists" ]; then
+      tmux new-session -d -s "$session" -c "$HOME"
+      tmux new-window -t "$session":0 -n 'yt' -c "$HOME"
+      tmux send-keys -t "$session":0 'pipe-viewer' C-m
+      tmux switch-client -t "$session":0
+    else
+      tmux switch-client -t "$session"
+    fi
+    ;;
+  workspace-template)
+    session="template"
+    sessionexists=$(tmux list-sessions | grep "^$session":)
+    if [ -z "$sessionexists" ]; then
+      tmux new-session -d -s "$session" -c "$HOME"
+      tmux new-window -t "$session":0 -n 'nap' -c "$HOME"
+      tmux send-keys -t "$session":0 'nap' C-m
+      tmux new-window -t "$session":1 -n 'napbay' -c "$HOME"
+      tmux send-keys -t "$session":1 'while true; do \
+        tmux rename-window -t "$session":1 "napbay" && clear && \
+        ranger ~/.cyberbay/napsterbay/completed ~/.cyberbay/napsterbay/incompleted \
+        --cmd="set preview_files false" ; done' C-m
+      tmux switch-client -t "$session":0
+    else
+      tmux switch-client -t "$session"
+    fi
+    ;;
+  goto-weechat)
+    win_name="weechat"
+    line=$(tmux list-windows -a -F "#{session_name}:#{window_id}: #{window_name}" | grep ": ${win_name}$") || exit 0
+    session="$(echo "$line" |  cut -d ':' -f1)"
+    window_num="$(echo "$line" |  cut -d ':' -f2)"
+    tmux select-window -t "$window_num" && tmux switch-client -t "$session"
+    ;;
+  edit-conf)
+    tmux new-window -n 'conf' '[ -f "$HOME/.tmux.conf" ] && $EDITOR $HOME/.tmux.conf && tmux source $HOME/.tmux.conf && tmux display "$HOME/.tmux.conf sourced" || $EDITOR $HOME/.config/tmux/tmux.conf && tmux source $HOME/.config/tmux/tmux.conf && tmux display "$HOME/.config/tmux/tmux.conf sourced"'
+    ;;
+  edit-speed)
+    tmux new-window -n 'speed' "[ -f "$0" ] && $EDITOR $0"
+    ;;
+  manpage)
+    tmux new-window -n 'mantmux' 'man tmux'
+    ;;
+  statusbar-hide-toggle)
+    tmux set-option -g status
+    ;;
+esac

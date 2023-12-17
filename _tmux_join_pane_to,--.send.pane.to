@@ -1,3 +1,0 @@
-#!/usr/bin/env sh
-tmux command-prompt -p "send current pane to?" "join-pane -t '%%'"
-
